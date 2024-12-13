@@ -2,6 +2,7 @@ import socket
 import os
 import hashlib
 import logging
+import struct
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -83,20 +84,21 @@ else:
 
 # Encrypt and send multiple messages to the client
 aes_key = ptk[32:64]
-# nonce will be generated separately for each message
 
 messages = [b'Hello, client!', b'Welcome to WPA3 simulation!', b'This is a secure message.']
 for msg in messages:
     nonce = os.urandom(16)
     aes_cipher = Cipher(algorithms.AES(aes_key), modes.CFB(nonce))
-    encryptor = aes_cipher.encryptor()  # Generate a new nonce for each message
-    aes_cipher = Cipher(algorithms.AES(aes_key), modes.CFB(nonce))
     encryptor = aes_cipher.encryptor()
-    ciphertext = nonce + encryptor.update(msg)
-    client_socket.sendall(ciphertext)
+    ciphertext = encryptor.update(msg) + encryptor.finalize()
+
+    # Combine nonce and ciphertext, and prefix with message length
+    packet = nonce + ciphertext
+    packet_length = struct.pack('>I', len(packet))  # 4-byte big-endian length
+    client_socket.sendall(packet_length + packet)
+
     logger.info(f"Original message: {msg.decode()}")
-    logger.info(f"Sent encrypted packet: {base64.b64encode(ciphertext).decode()}")
+    logger.info(f"Sent encrypted packet: {base64.b64encode(packet).decode()}")
 
 client_socket.close()
 server.close()
-
