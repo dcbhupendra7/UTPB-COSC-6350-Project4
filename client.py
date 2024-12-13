@@ -1,9 +1,7 @@
-
-
-
 import socket
 import os
 import logging
+import struct
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -78,20 +76,33 @@ else:
 
 # Receive and decrypt multiple messages from the server
 while True:
-    ciphertext = client.recv(1024)
-    if not ciphertext:
+    # First, read the 4-byte length prefix
+    packet_length_data = client.recv(4)
+    if not packet_length_data:
         break
-    nonce = ciphertext[:16]
-    ciphertext = ciphertext[16:]
+    packet_length = struct.unpack('>I', packet_length_data)[0]
+
+    # Then, read the exact length of the packet
+    packet = client.recv(packet_length)
+    if not packet:
+        break
+
+    # Extract nonce and ciphertext
+    nonce = packet[:16]
+    ciphertext = packet[16:]
+
+    # Decrypt the ciphertext
     aes_key = ptk[32:64]
     aes_cipher = Cipher(algorithms.AES(aes_key), modes.CFB(nonce))
     decryptor = aes_cipher.decryptor()
-    plaintext = decryptor.update(ciphertext)
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+
+    # Decode message or handle non-UTF-8 data
     try:
         decoded_message = plaintext.decode('utf-8')
     except UnicodeDecodeError:
         decoded_message = "[Non-UTF-8 data received]"
-    logger.info(f"Received encrypted packet: {base64.b64encode(ciphertext).decode()}")
+    logger.info(f"Received encrypted packet: {base64.b64encode(packet).decode()}")
     logger.info(f"Decrypted message: {decoded_message}")
 
 client.close()
